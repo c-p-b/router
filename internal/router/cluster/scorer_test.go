@@ -680,6 +680,38 @@ func TestLatestBundleRoutesDeepSeekV41FlashOnly(t *testing.T) {
 	assert.Equal(t, "makora", decision.Provider)
 }
 
+func TestLatestBundleRoutesDeepSeekV41FlashWithNormalRoster(t *testing.T) {
+	previousBundle, err := LoadBundle("v0.75")
+	require.NoError(t, err)
+	latestVersion, err := ResolveVersion(LatestVersion)
+	require.NoError(t, err)
+	latestBundle, err := LoadBundle(latestVersion)
+	require.NoError(t, err)
+
+	availableProviders := make(map[string]struct{})
+	for _, bundle := range []*Bundle{previousBundle, latestBundle} {
+		for _, candidate := range bundle.Registry.DeployedModels {
+			availableProviders[candidate.Provider] = struct{}{}
+		}
+	}
+
+	// v0.75 and v0.76 share the same centroids, so this vector isolates
+	// cluster 8 while retaining the normal top-four, full-provider roster.
+	cluster8Vector := previousBundle.Centroids.Row(8)
+	decisionFor := func(bundle *Bundle) router.Decision {
+		scorer, err := NewScorer(bundle, DefaultConfig(), &fakeEmbedder{vec: cluster8Vector}, availableProviders)
+		require.NoError(t, err)
+		decision, err := scorer.Route(context.Background(), router.Request{PromptText: "solve a small coding task"})
+		require.NoError(t, err)
+		return decision
+	}
+
+	previousDecision := decisionFor(previousBundle)
+	latestDecision := decisionFor(latestBundle)
+	assert.Equal(t, previousDecision.Model, latestDecision.Model,
+		"adding V4.1 Flash with calibrated AA priors must preserve cluster-8 routing")
+}
+
 func TestNewScorer_RejectsRankingsMissingDeployedModel(t *testing.T) {
 	dim := EmbedDim
 	c0 := make([]float32, dim)

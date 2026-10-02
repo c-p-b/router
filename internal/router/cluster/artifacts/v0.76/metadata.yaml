@@ -116,6 +116,7 @@ deployed_providers:
 - deepinfra
 - fireworks
 - google
+- makora
 - openai
 deployed_models:
 - claude-haiku-4-5
