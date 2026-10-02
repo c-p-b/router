@@ -334,6 +334,9 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 		if !linkedBoost && proposal.Scope != ChangeProfile && !sameLaneProfile(lane.Profile, next.Profile) {
 			return errors.New("base promotion must retain destination profile revisions")
 		}
+		if proposal.Scope == ChangeCustom && linkedBoost && ((lane.Profile == nil) != (next.Profile == nil) || (lane.Profile != nil && (lane.Profile.Key != next.Profile.Key || lane.Profile.Requirements != next.Profile.Requirements))) {
+			return errors.New("custom promotion changes Boost profile outside its policy")
+		}
 		if proposal.Scope == ChangeProfile && key != proposal.ProfileKey || proposal.Scope == ChangeRoster && !linkedBoost {
 			same, err := lanes.sameLane(ctx, lane, next)
 			if err != nil {
@@ -524,7 +527,7 @@ func (r *laneReader) sameLane(ctx context.Context, left, right resolvedLane) (bo
 // may update Boost's policy pin with Default, while retaining its code, binding, profile
 // requirements, and deployment identity.
 func (r *laneReader) sameLaneExceptPolicy(ctx context.Context, left, right resolvedLane) (bool, error) {
-	if left.Binding != right.Binding || !sameLaneProfileExceptPolicy(left.Profile, right.Profile) {
+	if left.Binding != right.Binding || (left.Profile == nil) != (right.Profile == nil) || (left.Profile != nil && (left.Profile.Key != right.Profile.Key || left.Profile.Requirements != right.Profile.Requirements)) {
 		return false, nil
 	}
 	leftCandidate, err := r.effectiveCandidate(ctx, left)
@@ -538,13 +541,6 @@ func (r *laneReader) sameLaneExceptPolicy(ctx context.Context, left, right resol
 	leftCandidate.Policy = PolicyObject{}
 	rightCandidate.Policy = PolicyObject{}
 	return leftCandidate.Equal(rightCandidate), nil
-}
-
-func sameLaneProfileExceptPolicy(left, right *laneProfile) bool {
-	if (left == nil) != (right == nil) {
-		return false
-	}
-	return left == nil || left.Key == right.Key && left.Requirements == right.Requirements
 }
 
 // laneReader resolves selection sets of either version and memoizes candidate compositions, so
