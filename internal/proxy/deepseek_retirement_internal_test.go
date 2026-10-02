@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDeepSeekFamilyAliasesUseV41Flash(t *testing.T) {
+func TestDeepSeekFamilyAliasesUseV4_1Flash(t *testing.T) {
 	for _, alias := range []string{"deepseek", "deepseek-flash", "deepseek-v4-1-flash", "deepseek-v4p1-flash"} {
 		t.Run(alias, func(t *testing.T) {
 			model, _, known := resolveForceModel(alias)
