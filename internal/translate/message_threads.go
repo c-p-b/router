@@ -1,12 +1,8 @@
 package translate
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // Message-thread request types Claude Code sends in the top-level `thread`
@@ -18,20 +14,6 @@ const (
 )
 
 const messageThreadsBetaPrefix = "message-threads-"
-
-// MessageThreadType returns the Anthropic Messages body's thread.type, or "".
-func MessageThreadType(body []byte) string {
-	return gjson.GetBytes(body, "thread.type").String()
-}
-
-// StripMessageThread removes the top-level `thread` field.
-func StripMessageThread(body []byte) ([]byte, error) {
-	out, err := sjson.DeleteBytes(body, "thread")
-	if err != nil {
-		return body, fmt.Errorf("delete thread: %w", err)
-	}
-	return out, nil
-}
 
 // StripMessageThreadsBeta removes message-threads tokens from anthropic-beta.
 func StripMessageThreadsBeta(h http.Header) {
