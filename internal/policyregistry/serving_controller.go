@@ -330,7 +330,7 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 			return errors.New("registered profile keys cannot be removed")
 		}
 		// Boost follows Default atomically; all other profiles keep their own pins.
-		linkedBoost := key == boostProfile.Key && (proposal.Scope == ChangeRoster || proposal.Scope == ChangeFull)
+		linkedBoost := key == boostProfile.Key && (proposal.Scope == ChangeRoster || proposal.Scope == ChangeFull || proposal.Scope == ChangeCustom)
 		if !linkedBoost && proposal.Scope != ChangeProfile && !sameLaneProfile(lane.Profile, next.Profile) {
 			return errors.New("base promotion must retain destination profile revisions")
 		}
@@ -341,6 +341,15 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 			}
 			if !same {
 				return errors.New("proposal changes an out-of-scope customer tuple")
+			}
+		}
+		if proposal.Scope == ChangeRoster && linkedBoost {
+			same, err := lanes.sameLaneExceptPolicy(ctx, lane, next)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return errors.New("roster-only promotion changes Boost outside its policy")
 			}
 		}
 	}
@@ -509,6 +518,33 @@ func (r *laneReader) sameLane(ctx context.Context, left, right resolvedLane) (bo
 		return false, err
 	}
 	return leftCandidate.Equal(rightCandidate), nil
+}
+
+// sameLaneExceptPolicy holds when two lanes differ only in their selected policy. Roster changes
+// may update Boost's policy pin with Default, while retaining its code, binding, profile
+// requirements, and deployment identity.
+func (r *laneReader) sameLaneExceptPolicy(ctx context.Context, left, right resolvedLane) (bool, error) {
+	if left.Binding != right.Binding || !sameLaneProfileExceptPolicy(left.Profile, right.Profile) {
+		return false, nil
+	}
+	leftCandidate, err := r.effectiveCandidate(ctx, left)
+	if err != nil {
+		return false, err
+	}
+	rightCandidate, err := r.effectiveCandidate(ctx, right)
+	if err != nil {
+		return false, err
+	}
+	leftCandidate.Policy = PolicyObject{}
+	rightCandidate.Policy = PolicyObject{}
+	return leftCandidate.Equal(rightCandidate), nil
+}
+
+func sameLaneProfileExceptPolicy(left, right *laneProfile) bool {
+	if (left == nil) != (right == nil) {
+		return false
+	}
+	return left == nil || left.Key == right.Key && left.Requirements == right.Requirements
 }
 
 // laneReader resolves selection sets of either version and memoizes candidate compositions, so

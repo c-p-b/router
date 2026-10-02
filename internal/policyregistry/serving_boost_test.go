@@ -63,18 +63,18 @@ func TestBoostCannotActivateAnIndependentRoster(t *testing.T) {
 
 func TestBoostRosterMovesAtomicallyWithDefaultV2(t *testing.T) {
 	store, _, original := controllerFixture(t)
-	base := *store.object(t, policyregistry.ServingReleases, original.Default.Release).(*policyregistry.ServingRelease)
+	baseRelease := *store.object(t, policyregistry.ServingReleases, original.Default.Release).(*policyregistry.ServingRelease)
 	boost, ok := entitlement.ServingProfileFor(entitlement.PlanBoost)
 	require.True(t, ok)
-	original.Profiles[boost.Key] = registerProfileFixture(t, store, original.Default, boost.Key, base.Policy)
-	original.Profiles[profileKeyTwo] = registerProfileFixture(t, store, original.Default, profileKeyTwo, base.Policy)
+	original.Profiles[boost.Key] = registerProfileFixture(t, store, original.Default, boost.Key, baseRelease.Policy)
+	original.Profiles[profileKeyTwo] = registerProfileFixture(t, store, original.Default, profileKeyTwo, baseRelease.Policy)
 	_, previous := foldSelectionSet(t, store, original)
-	changedPolicy := publishRosterArm(t, store, base.Policy, alternateRosterArm)
-	base.Policy = changedPolicy
+	changedPolicy := publishRosterArm(t, store, baseRelease.Policy, alternateRosterArm)
+	baseRelease.Policy = changedPolicy
 	binding := store.object(t, policyregistry.ServingBindings, original.Default.Binding).(*policyregistry.DeploymentBinding)
 	updated := original
 	updated.Profiles = maps.Clone(original.Profiles)
-	updated.Default = publishSelection(t, store, original.Default, base, binding.Router, binding.Classifier, nil)
+	updated.Default = publishSelection(t, store, original.Default, baseRelease, binding.Router, binding.Classifier, nil)
 	updated.Profiles[boost.Key] = registerProfileFixture(t, store, updated.Default, boost.Key, changedPolicy)
 	_, next := foldSelectionSet(t, store, updated)
 	proposal := policyregistry.DeploymentProposalV2{
@@ -85,6 +85,36 @@ func TestBoostRosterMovesAtomicallyWithDefaultV2(t *testing.T) {
 	}
 	controller := permissiveController(t, store)
 	require.NoError(t, controller.ValidateProposal(context.Background(), proposal))
+	customProposal := proposal
+	customProposal.Scope = policyregistry.ChangeCustom
+	require.NoError(t, controller.ValidateProposal(context.Background(), customProposal))
+
+	tampered := updated
+	tampered.Profiles = maps.Clone(updated.Profiles)
+	boostSelection := tampered.Profiles[boost.Key]
+	boostBinding := *store.object(t, policyregistry.ServingBindings, boostSelection.Binding).(*policyregistry.DeploymentBinding)
+	boostBinding.Attestation = artifactRef("evidence")
+	tampered.Profiles[boost.Key] = policyregistry.ServingSelection{
+		Release: boostSelection.Release,
+		Binding: store.publish(t, policyregistry.ServingBindings, boostBinding),
+		Profile: boostSelection.Profile,
+	}
+	_, tamperedSelection := foldSelectionSet(t, store, tampered)
+	tamperedProposal := proposal
+	tamperedProposal.SelectionSet = tamperedSelection
+	require.ErrorContains(t, controller.ValidateProposal(context.Background(), tamperedProposal), "roster-only promotion changes Boost outside its policy")
+
+	tamperedCandidate := updated
+	tamperedCandidate.Profiles = maps.Clone(updated.Profiles)
+	boostSelection = tamperedCandidate.Profiles[boost.Key]
+	boostRelease := *store.object(t, policyregistry.ServingReleases, boostSelection.Release).(*policyregistry.ServingRelease)
+	boostRelease.Provenance.BuildAttestation = artifactRef("evidence")
+	tamperedCandidate.Profiles[boost.Key] = publishSelection(t, store, boostSelection, boostRelease, binding.Router, binding.Classifier, boostSelection.Profile)
+	_, tamperedCandidateRef := foldSelectionSet(t, store, tamperedCandidate)
+	tamperedCandidateProposal := proposal
+	tamperedCandidateProposal.SelectionSet = tamperedCandidateRef
+	require.ErrorContains(t, controller.ValidateProposal(context.Background(), tamperedCandidateProposal), "roster-only promotion changes Boost outside its policy")
+
 	updated.Profiles[boost.Key] = original.Profiles[boost.Key]
 	_, stale := foldSelectionSet(t, store, updated)
 	proposal.SelectionSet = stale
