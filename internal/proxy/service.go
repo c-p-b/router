@@ -3362,11 +3362,10 @@ func (s *Service) ProxyMessages(ctx context.Context, body []byte, w http.Respons
 		observability.FromContext(ctx).Info("Rejecting message-thread continue; client resends full history")
 		return writeMessageThreadUnsupported(w)
 	case translate.MessageThreadCreate:
-		stateless, threadErr := sjson.DeleteBytes(body, "thread")
-		if threadErr != nil {
+		var threadErr error
+		if body, threadErr = sjson.DeleteBytes(body, "thread"); threadErr != nil {
 			return fmt.Errorf("strip message thread: %w", threadErr)
 		}
-		body = stateless
 		translate.StripMessageThreadsBeta(r.Header)
 	}
 	ctx, returnErr = s.withClassifierInput(ctx, body, router.EndpointAnthropicMessages)
