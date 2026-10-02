@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"weave-os/router/internal/router/hmm/rosterdata"
+	"weave-os/router/internal/subscriptions/entitlement"
 )
 
 // ServingStore is shared by admission, proposal validation and the single activation controller.
@@ -262,6 +263,7 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 	}
 	base, baseBinding := prepared.Candidate, prepared.Binding
 	base.Policy = prepared.PolicyReference
+	boostProfile, _ := entitlement.ServingProfileFor(entitlement.PlanBoost)
 	for key, lane := range set.Profiles {
 		profile, err := c.validateSelection(ctx, destinations, proposal.Target, key, lane.Selection)
 		if err != nil {
@@ -272,6 +274,10 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 		}
 		if profile.Binding.Router != baseBinding.Router || profile.Binding.Classifier != baseBinding.Classifier {
 			return errors.New("profile must reuse its lane's prepared worker and classifier revisions")
+		}
+		if key == boostProfile.Key && profile.PolicyReference != base.Policy {
+			c.logger.Warn("Rejected independent Boost roster", "target", proposal.Target, "selection_set_sha256", proposal.SelectionSet.SHA256, "default_policy_sha256", base.Policy.SHA256, "boost_policy_sha256", profile.PolicyReference.SHA256)
+			return errors.New("Boost must use the default roster")
 		}
 	}
 	source, err := lanes.candidate(ctx, proposal.SourceCandidate)
@@ -323,10 +329,12 @@ func (c *ServingController) validateProposal(ctx context.Context, proposal Propo
 		if !exists {
 			return errors.New("registered profile keys cannot be removed")
 		}
-		if proposal.Scope != ChangeProfile && !sameLaneProfile(lane.Profile, next.Profile) {
+		// Boost follows Default atomically; all other profiles keep their own pins.
+		linkedBoost := key == boostProfile.Key && (proposal.Scope == ChangeRoster || proposal.Scope == ChangeFull)
+		if !linkedBoost && proposal.Scope != ChangeProfile && !sameLaneProfile(lane.Profile, next.Profile) {
 			return errors.New("base promotion must retain destination profile revisions")
 		}
-		if proposal.Scope == ChangeProfile && key != proposal.ProfileKey || proposal.Scope == ChangeRoster {
+		if proposal.Scope == ChangeProfile && key != proposal.ProfileKey || proposal.Scope == ChangeRoster && !linkedBoost {
 			same, err := lanes.sameLane(ctx, lane, next)
 			if err != nil {
 				return err
