@@ -724,7 +724,8 @@ func (s *Service) runTurnLoop(
 		return turnLoopResult{}, compatibilityErr
 	}
 	if planOwnedServingRequest(ctx) {
-		req.ForceModel = ""
+		// Plan-owned profiles ignore installation routing controls, but an
+		// explicit force-model choice remains a caller-owned override.
 		req.ForceCluster = ""
 	}
 	ctx = context.WithValue(ctx, translationPlanAppliedContextKey{}, true)
@@ -1742,6 +1743,9 @@ func (s *Service) runTurnLoop(
 			res.PinTier = "escalation_xgb"
 			if llmTurn != nil && llmTurn.active {
 				res.PinTier = llmEscalationPinTier
+				if llmTurn.session.Config.EffectiveClassifier() == flags.EscalationClassifierLLM {
+					res.PinTier = qwenEscalationPinTier
+				}
 			}
 			return res, nil
 		}
@@ -2563,9 +2567,6 @@ func (s *Service) loadPinWithStoreState(ctx context.Context, sessionKey [session
 	}
 	if !found {
 		return sessionpin.Pin{}, false, true
-	}
-	if planOwnedServingRequest(ctx) && isUserForcedReason(pin.Reason) {
-		return pin, false, false
 	}
 	if !pinMatchesEffectiveStrategy(ctx, pin) {
 		return sessionpin.Pin{}, false, false

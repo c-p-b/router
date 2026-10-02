@@ -26,6 +26,7 @@ import (
 	"weave-os/router/internal/config"
 	"weave-os/router/internal/dispatch"
 	"weave-os/router/internal/entra"
+	"weave-os/router/internal/escalationmodal"
 	"weave-os/router/internal/feedback"
 	"weave-os/router/internal/flags"
 	"weave-os/router/internal/observability"
@@ -777,8 +778,9 @@ func main() {
 	// Session-level demotion of an arm whose stream died after commit. Off
 	// until the upstream owner of those cuts is identified.
 	committedStreamArmDemotion := config.GetOr("ROUTER_COMMITTED_STREAM_ARM_DEMOTION", "false") == "true"
-	// Session-level demotion of the primary arm after a sibling rescue. Off
-	// until baked off against the committed-stream demotion.
+	// Session-level demotion of the primary arm after a response-header timeout
+	// or another pre-commit failure followed by sibling rescue. Off until baked
+	// off against the committed-stream demotion.
 	rescuedFailureArmDemotion := config.GetOr("ROUTER_RESCUED_FAILURE_ARM_DEMOTION", "false") == "true"
 	// Upstream 429s as transient throttling: cooldown demotion, fail-open
 	// rescue and Retry-After-aware same-binding retry. Off until baked off.
@@ -1254,6 +1256,16 @@ func main() {
 		}
 		escalationJudge = judge
 	}
+	qwenEscalationURL := strings.TrimSpace(os.Getenv("ROUTER_LLM_ESCALATION_URL"))
+	qwenEscalationKey := strings.TrimSpace(os.Getenv("ROUTER_LLM_ESCALATION_API_KEY"))
+	var qwenEscalationJudge llmescalation.Judge
+	if qwenEscalationURL != "" || qwenEscalationKey != "" {
+		judge, judgeErr := escalationmodal.NewJudge(qwenEscalationURL, qwenEscalationKey, nil)
+		if judgeErr != nil {
+			panic(judgeErr)
+		}
+		qwenEscalationJudge = judge
+	}
 	servedModels := proxyRoutableModels(routingTargets, availableProviders, hmmRouter != nil)
 
 	proxySvc := proxy.NewService(routeEntry, providerMap, telemetryEmitter, embedOnlyUser, semanticCache, pinStore, hardPinExplore, hardPinProvider, hardPinModel, repo.Telemetry).
@@ -1262,6 +1274,7 @@ func main() {
 		WithEscalation(escalationStore, escalationObserver).
 		WithEscalationDashboard(escalationDashboardStore).
 		WithLLMEscalation(llmEscalationStore, escalationJudge).
+		WithQwenEscalation(qwenEscalationJudge).
 		WithEscalationConfiguration(llmEscalationStore, authSvc.InvalidateInstallation, escalationJudgeActiveEnabled).
 		WithTranslationCompatibilityMode(proxy.TranslationCompatibilityMode(translationCompatibilityMode)).
 		WithScopedSearchRequirement(scopedSearchRequirement, searchRequirementDecayTurns).
