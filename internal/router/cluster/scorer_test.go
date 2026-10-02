@@ -621,6 +621,41 @@ func TestScorer_QwenBundleRoutes(t *testing.T) {
 	assert.Equal(t, "anthropic", d.Provider)
 }
 
+func TestLatestBundleRoutesDeepSeekV41FlashOnly(t *testing.T) {
+	version, err := ResolveVersion(LatestVersion)
+	require.NoError(t, err)
+	bundle, err := LoadBundle(version)
+	require.NoError(t, err)
+
+	scorer, err := NewScorer(
+		bundle,
+		cfgForTest(),
+		&fakeEmbedder{vec: makeOpusVec()},
+		map[string]struct{}{"makora": {}},
+	)
+	require.NoError(t, err)
+
+	const deepSeekV4_1Flash = "deepseek/deepseek-v4.1-flash"
+	excludedModels := make(map[string]struct{})
+	for _, candidate := range scorer.DeployedModels() {
+		if candidate.Model != deepSeekV4_1Flash {
+			excludedModels[candidate.Model] = struct{}{}
+		}
+	}
+
+	decision, err := scorer.Route(context.Background(), router.Request{
+		PromptText: "solve a small coding task",
+		EnabledProviders: map[string]struct{}{
+			"makora": {},
+		},
+		AllowedModels:  map[string]struct{}{deepSeekV4_1Flash: {}},
+		ExcludedModels: excludedModels,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, deepSeekV4_1Flash, decision.Model)
+	assert.Equal(t, "makora", decision.Provider)
+}
+
 func TestNewScorer_RejectsRankingsMissingDeployedModel(t *testing.T) {
 	dim := EmbedDim
 	c0 := make([]float32, dim)
