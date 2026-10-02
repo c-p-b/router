@@ -627,6 +627,31 @@ func TestLatestBundleRoutesDeepSeekV41FlashOnly(t *testing.T) {
 	bundle, err := LoadBundle(version)
 	require.NoError(t, err)
 
+	const deepSeekV4_1Flash = "deepseek/deepseek-v4.1-flash"
+	for cluster, qualityByModel := range bundle.QualityMeans {
+		v41Quality, ok := qualityByModel[deepSeekV4_1Flash]
+		require.Truef(t, ok, "latest bundle quality_means missing V4.1 Flash for cluster %d", cluster)
+		var qualityMin, qualityMax float32
+		firstIncumbent := true
+		for model, quality := range qualityByModel {
+			if model == deepSeekV4_1Flash {
+				continue
+			}
+			if firstIncumbent || quality < qualityMin {
+				qualityMin = quality
+			}
+			if firstIncumbent || quality > qualityMax {
+				qualityMax = quality
+			}
+			firstIncumbent = false
+		}
+		require.False(t, firstIncumbent, "latest bundle has no incumbent models")
+		require.GreaterOrEqualf(t, v41Quality, qualityMin,
+			"V4.1 Flash AA prior fell below the incumbent quality scale in cluster %d", cluster)
+		require.LessOrEqualf(t, v41Quality, qualityMax,
+			"V4.1 Flash AA prior exceeded the incumbent quality scale in cluster %d", cluster)
+	}
+
 	scorer, err := NewScorer(
 		bundle,
 		cfgForTest(),
@@ -635,7 +660,6 @@ func TestLatestBundleRoutesDeepSeekV41FlashOnly(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	const deepSeekV4_1Flash = "deepseek/deepseek-v4.1-flash"
 	excludedModels := make(map[string]struct{})
 	for _, candidate := range scorer.DeployedModels() {
 		if candidate.Model != deepSeekV4_1Flash {

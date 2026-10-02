@@ -1,4 +1,4 @@
-# v0.76: v0.75 + DeepSeek V4.1 Flash, AA-prior-only additive overlay; centroids unchanged.
+# v0.76: v0.75 + DeepSeek V4.1 Flash, evidence-shrunk AA priors quantile-mapped to incumbent quality scale; centroids unchanged.
 format_version: 2
 version: v0.76
 parent: v0.75

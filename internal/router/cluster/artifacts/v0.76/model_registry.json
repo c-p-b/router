@@ -1,6 +1,6 @@
 {
  "meta": {
-  "comment": "v0.76 is a geometry-frozen additive overlay on v0.75. DeepSeek V4.1 Flash quality cells come from AA priors; no model training.",
+  "comment": "v0.76 is a geometry-frozen additive overlay on v0.75. DeepSeek V4.1 Flash quality cells are evidence-shrunk AA priors mapped onto the incumbent quality scale; no model training.",
   "last_refreshed": "2026-10-02",
   "parent": "v0.75",
   "training_recipe": "k=16, alpha=0.80, shrinkage_k0=10, score_normalization=zscore, output_cost_ratio=0.25, speed_weight=0.08, per_model_verbosity=true, include_aa_labels (v0.56-keyed), aa_evidence_scale=3.0. Direct labels: routerarena_labels_combined.jsonl (236k rows) + Tier 3 SWE-bench Easy shards (tier3-full-20260527 + tier3-opus48-20260529, 5820 shards). measured_speed/verbosity from tier1_20260530.json. opus-4-8 proxies opus-4-7 RouterArena column + own swebench column."
