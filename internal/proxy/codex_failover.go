@@ -86,21 +86,21 @@ func codexSubscriptionModelRejected(err error) bool {
 	if !errors.As(err, &buffered) || (buffered.Status != http.StatusBadRequest && buffered.Status != http.StatusNotFound) {
 		return false
 	}
-	var env struct {
+	var errorEnvelope struct {
 		Error struct {
 			Code  string `json:"code"`
 			Type  string `json:"type"`
 			Param string `json:"param"`
 		} `json:"error"`
 	}
-	if jsonErr := json.Unmarshal(buffered.Body, &env); jsonErr != nil {
+	if jsonErr := json.Unmarshal(buffered.Body, &errorEnvelope); jsonErr != nil {
 		return false
 	}
-	switch env.Error.Code {
+	switch errorEnvelope.Error.Code {
 	case "model_not_found", "unsupported_model", "model_not_available":
 		return true
 	}
-	return env.Error.Param == "model" && env.Error.Type == "invalid_request_error"
+	return errorEnvelope.Error.Param == "model" && errorEnvelope.Error.Type == "invalid_request_error"
 }
 
 // codexSubscriptionModelUnavailable makes a cached pool denial look like the
