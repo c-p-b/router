@@ -26,6 +26,33 @@ func codexCtx(token, accountID string) context.Context {
 	})
 }
 
+func TestProxy_CodexOutOfRosterModelPreservesSelectedWireID(t *testing.T) {
+	const model = "gpt-6-astra"
+	var receivedModel string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/responses", r.URL.Path)
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		receivedModel = gjson.GetBytes(body, "model").String()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\"}\\n\\n")
+	}))
+	defer upstream.Close()
+
+	client := NewClient("deployment-key", "https://api.openai.example.invalid")
+	client.SetCodexBaseURL(upstream.URL)
+	prepared := providers.PreparedRequest{
+		Body:     []byte(`{"model":"` + model + `","input":"hi","stream":true}`),
+		Endpoint: providers.EndpointResponses,
+		Headers:  make(http.Header),
+	}
+	err := client.Proxy(codexCtx("synthetic-codex-jwt", "synthetic-account"), router.Decision{
+		Model: model, Provider: providers.ProviderOpenAI,
+	}, prepared, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
+	require.NoError(t, err)
+	assert.Equal(t, model, receivedModel)
+}
+
 func TestProxy_CodexLunaSubscriptionDispatch(t *testing.T) {
 	const model = "gpt-6-luna"
 	var receivedModel, receivedAccount, receivedAuth string
