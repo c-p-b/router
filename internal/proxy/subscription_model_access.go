@@ -125,7 +125,7 @@ func (s *Service) resolveCredentials(ctx context.Context, provider, model string
 	if provider == providers.ProviderOpenAI && creds != nil && creds.OAuth && len(creds.AccountID) > 0 &&
 		!paidFallbackForbidden(ctx) && s.openaiFallbackKeyAvailable(ctx) &&
 		s.subscriptionModels.deniedForProvider(creds.APIKey, provider, model, s.clockNow()) {
-		return resolveAndInjectCredentials(withSuppressedCodexSubscription(resolved), provider, model, headers)
+		return resolveAndInjectCredentials(withSuppressedCodexModel(resolved, model), provider, model, headers)
 	}
 	if provider != providers.ProviderAnthropic || creds == nil || !creds.OAuth ||
 		paidFallbackForbidden(ctx) || !s.anthropicFallbackKeyAvailable(ctx) ||

@@ -93,6 +93,9 @@ func managedSubscriptionEnrolled(ctx context.Context, provider subscriptions.Pro
 }
 
 func managedSubscriptionCanServe(ctx context.Context, provider, model string) bool {
+	if provider == providers.ProviderOpenAI && codexChatEndpoint(ctx) {
+		return false
+	}
 	poolProvider, eligible := managedSubscriptionProviderFromUpstream(provider, model)
 	return eligible && managedSubscriptionEnrolled(ctx, poolProvider)
 }
@@ -162,7 +165,7 @@ func (s *Service) costNeutralSubscriptionServed(ctx context.Context) bool {
 
 func (s *Service) leaseManagedSubscription(ctx context.Context, provider, model string) (context.Context, subscriptions.Lease, bool, error) {
 	poolProvider, eligible := managedSubscriptionProviderFromUpstream(provider, model)
-	if !eligible || s.managedSubscriptions == nil {
+	if !eligible || s.managedSubscriptions == nil || poolProvider == subscriptions.ProviderCodex && codexChatEndpoint(ctx) {
 		return ctx, subscriptions.Lease{}, false, nil
 	}
 	currentCredentials := CredentialsFromContext(ctx)

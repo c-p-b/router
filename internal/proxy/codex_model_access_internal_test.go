@@ -27,6 +27,6 @@ func TestCodexSubscriptionModelRejectionSuppressesLaterOAuthResolution(t *testin
 	assert.False(t, servedOnCodexSubscription(laterCtx), "a cached model-access denial must skip Codex OAuth for that model")
 	assert.False(t, servedOnSubscription(laterCtx), "the denied turn must resolve onto the available paid fallback")
 
-	otherModelCtx := svc.resolveCredentials(ctx, providers.ProviderOpenAI, "gpt-5.6-sol", http.Header{})
-	assert.True(t, servedOnCodexSubscription(otherModelCtx), "a model-specific denial must leave other Codex models available")
+	otherModelCtx := svc.resolveCredentials(laterCtx, providers.ProviderOpenAI, "gpt-5.6-sol", http.Header{})
+	assert.True(t, servedOnCodexSubscription(otherModelCtx), "a model-specific denial must leave sibling failover on Codex OAuth")
 }

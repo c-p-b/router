@@ -29,8 +29,9 @@ const outOfRosterCodexModel = "gpt-6-astra"
 // fundingAttempt records how one upstream dispatch was funded and which model
 // it carried.
 type fundingAttempt struct {
-	oauth bool
-	model string
+	oauth    bool
+	model    string
+	endpoint providers.Endpoint
 }
 
 // scriptedFundingClient answers OAuth-funded attempts with subscriptionErr
@@ -47,9 +48,13 @@ func (c *scriptedFundingClient) Proxy(ctx context.Context, decision router.Decis
 	if model == "" {
 		model = decision.Model
 	}
-	c.attempts = append(c.attempts, fundingAttempt{oauth: oauth, model: model})
+	c.attempts = append(c.attempts, fundingAttempt{oauth: oauth, model: model, endpoint: prep.Endpoint})
 	if oauth && c.subscriptionErr != nil {
 		return c.subscriptionErr
+	}
+	if prep.Endpoint == providers.EndpointChatCompletions {
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"served\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+		return nil
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	for _, frame := range []string{
@@ -224,4 +229,32 @@ func TestCodexOutOfRosterModel_ManagedPoolFundsBeforeAPICredential(t *testing.T)
 			assert.Equal(t, tc.wantPoolServe, managedSubscriptionServed(ctx))
 		})
 	}
+}
+
+func TestCodexOutOfRosterModel_ChatOnlyRequestUsesAPICredential(t *testing.T) {
+	client := &scriptedFundingClient{}
+	svc := outOfRosterFundingService(client, translate.ReasonUserForceModel, &auxBillingRepo{})
+	ctx := outOfRosterBillingCtx(codexSubscriptionTestCtx())
+	body := `{"model":"gpt-6-astra","stream":true,"n":2,"messages":[{"role":"user","content":"synthetic"}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+
+	require.NoError(t, svc.ProxyOpenAIChatCompletion(ctx, []byte(body), rec, req))
+	require.Len(t, client.attempts, 1)
+	assert.Equal(t, providers.EndpointChatCompletions, client.attempts[0].endpoint)
+	assert.False(t, client.attempts[0].oauth, "a Chat Completions request must use the API credential, not Codex OAuth")
+}
+
+func TestCodexOutOfRosterModel_ChatOnlyRequestWithoutAPICredentialRefusesBeforeDispatch(t *testing.T) {
+	client := &scriptedFundingClient{}
+	svc := outOfRosterFundingService(client, translate.ReasonUserForceModel, &auxBillingRepo{})
+	svc.deploymentKeyedProviders = nil
+	ctx := outOfRosterBillingCtx(codexSubscriptionTestCtx())
+	body := `{"model":"gpt-6-astra","stream":true,"n":2,"messages":[{"role":"user","content":"synthetic"}]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+
+	err := svc.ProxyOpenAIChatCompletion(ctx, []byte(body), rec, req)
+	assert.ErrorIs(t, err, ErrCreditsExhaustedSubscriptionUnavailable)
+	assert.Empty(t, client.attempts, "the Codex token must not be sent to Chat Completions without an API fallback")
 }
