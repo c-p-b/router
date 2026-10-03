@@ -6958,9 +6958,10 @@ func (s *Service) ProxyOpenAIChatCompletion(ctx context.Context, body []byte, w 
 	if s.codexSubscriptionExhausted(ctx, r.Header) {
 		ctx = withSuppressedCodexSubscription(ctx)
 	}
-	responsesEndpointKey := EffectiveBaseURL(ctx, decision.Provider)
+	resolvedCtx := s.resolveCredentials(ctx, decision.Provider, decision.Model, r.Header)
+	responsesEndpointKey := EffectiveBaseURL(resolvedCtx, decision.Provider)
 	openAIResponsesEndpoint := responsesPassthrough
-	if !openAIResponsesEndpoint && !routeRes.Handover.Invoked && decision.Provider == providers.ProviderOpenAI {
+	if !openAIResponsesEndpoint && decision.Provider == providers.ProviderOpenAI {
 		openAIResponsesEndpoint = translate.UseOpenAIResponsesAPI(translate.ResponsesRoute{
 			Provider:       decision.Provider,
 			Capabilities:   opts.Capabilities,
@@ -6969,12 +6970,15 @@ func (s *Service) ProxyOpenAIChatCompletion(ctx context.Context, body []byte, w 
 			Broad:          s.ResolveOpenAIResponsesBroad(ctx),
 		}) && !s.gatewayLacksResponses(responsesEndpointKey)
 	}
-	var endpointErr error
-	ctx, endpointErr = s.avoidCodexOnChatEndpoint(ctx, decision.Provider, decision.Model, openAIResponsesEndpoint, r.Header)
+	endpointCtx, endpointErr := s.avoidCodexOnChatEndpoint(ctx, decision.Provider, decision.Model, openAIResponsesEndpoint, r.Header)
 	if endpointErr != nil {
 		return endpointErr
 	}
-	ctx = s.resolveCredentials(ctx, decision.Provider, decision.Model, r.Header)
+	if codexChatEndpoint(endpointCtx) {
+		ctx = s.resolveCredentials(endpointCtx, decision.Provider, decision.Model, r.Header)
+	} else {
+		ctx = resolvedCtx
+	}
 	opts.FastMode = fastModeForAttempt(ctx, decision.Model, decision.Provider)
 	// fastServed tracks whether the most recent attempt went out on the fast
 	// tier so post-dispatch billing prices the winning attempt.
@@ -7028,7 +7032,7 @@ func (s *Service) ProxyOpenAIChatCompletion(ctx context.Context, body []byte, w 
 	// projection drops. Skip when compaction or a handover rewrote the envelope
 	// (stale bytes); pre-routing readers of responsesPassthrough already ran.
 	promotedToResponses := false
-	if !responsesPassthrough && openAIResponsesEndpoint {
+	if !responsesPassthrough && !routeRes.Handover.Invoked && openAIResponsesEndpoint {
 		if native, ok := ctx.Value(nativeResponsesBodyContextKey{}).([]byte); ok && len(native) > 0 {
 			responsesBody = native
 			responsesPassthrough = true
